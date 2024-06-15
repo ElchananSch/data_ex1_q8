@@ -1,0 +1,21 @@
+Fruit,Color,Peeling/Messiness,Growth Season,Price,Amount of Sugar,Time it Lasts
+Apple,Red,Low,Fall,0.2,0.125,0.069444444
+Banana,Yellow,Medium,Summer,0,0.15625,0.005555556
+Cherry,Red,Low,Summer,0.714285714,0.09375,0.005555556
+Date,Brown,Low,Fall,0.285714286,1,1
+Grape,Purple,Low,Fall,0.428571429,0.21875,0.025
+Orange,Orange,High,Winter,0.085714286,0.109375,0.069444444
+Peach,Pink,Medium,Summer,0.371428571,0.171875,0.025
+Pear,Green,Low,Fall,0.285714286,0.125,0.069444444
+Plum,Purple,Low,Summer,0.571428571,0.140625,0.013888889
+Watermelon,Green,High,Summer,0.028571429,0.0625,0.005555556
+Blueberry,Blue,Low,Summer,1,0.125,0.013888889
+Strawberry,Red,Low,Summer,0.571428571,0.078125,0
+Mango,Orange,High,Summer,0.371428571,0.1875,0.025
+Kiwi,Brown,High,Fall,0.771428571,0.15625,0.025
+Papaya,Orange,High,Summer,0.457142857,0.140625,0.013888889
+Pineapple,Yellow,High,Summer,0.857142857,0.125,0.013888889
+Lemon,Yellow,High,Winter,0.057142857,0,0.069444444
+Lime,Green,High,Winter,0.057142857,0,0.069444444
+Raspberry,Red,Low,Summer,0.714285714,0.046875,0.005555556
+Blackberry,Black,Low,Summer,0.714285714,0.046875,0.005555556
