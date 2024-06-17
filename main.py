@@ -8,12 +8,12 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.stem import PorterStemmer
-from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 ################################### TF-IDF ##########################################
 def unique_words(sentences_list):
-
     # Initialize an empty set to store unique words
     unique_words = set()
 
@@ -62,7 +62,7 @@ def compute_df(sentences, word_list):
 def compute_idf(df, total_documents):
     idf = {}
     for word, count in df.items():
-        idf[word] = np.log((1+total_documents) / (1+count)) +1
+        idf[word] = np.log((1 + total_documents) / (1 + count)) + 1
     return idf
 
 
@@ -91,12 +91,14 @@ def tfidf(sentences_list, words):
 
     return tfidf_df
 
+
 ########################### CRAWL WIKIPEDIA ###############################################
 def clean_text(text):
     """Remove reference tags and extra newlines from the text."""
     text = re.sub(r'\[.*?\]+', '', text)  # Remove reference tags
     text = text.replace('\n', ' ')  # Replace newlines with spaces
     return text
+
 
 def fetch_page_content(title):
     """Fetch the content of a Wikipedia page using the API."""
@@ -113,6 +115,7 @@ def fetch_page_content(title):
         return response.json()
     return None
 
+
 def get_page_text(page):
     """Extract the text from the page content."""
     pages = page['query']['pages']
@@ -121,6 +124,7 @@ def get_page_text(page):
             return clean_text(page_data['extract'])
     return None
 
+
 def is_disambiguation_page(page):
     """Check if the page is a disambiguation page."""
     pages = page['query']['pages']
@@ -128,6 +132,7 @@ def is_disambiguation_page(page):
         if 'pageprops' in page_data and 'disambiguation' in page_data['pageprops']:
             return True
     return False
+
 
 def get_first_link_from_disambiguation(soup):
     """Get the first link from the disambiguation page that likely leads to the fruit page."""
@@ -139,6 +144,7 @@ def get_first_link_from_disambiguation(soup):
 
             return updated_fruit.replace('_', ' ')
     return None
+
 
 def get_wikipedia_text(fruit):
     # Fetch the initial page content using the Wikipedia API
@@ -165,7 +171,6 @@ def get_wikipedia_text(fruit):
 
 
 def fruitcrawl(fruits):
-
     # Dictionary to store the text for each fruit
     fruit_texts = {}
 
@@ -181,8 +186,18 @@ def fruitcrawl(fruits):
     with open('fruit_texts.json', 'w', encoding='utf-8') as f:
         json.dump(fruit_texts, f, ensure_ascii=False, indent=4)
 
+
 ##################################### SUMMARIZTION WITH PAGE RANK ###########################
 
+
+def remove_see_also_section(text):
+    # Define the regex pattern to match "== See also ==" and everything that follows
+    pattern = r"== See also ==.*"
+
+    # Use re.sub to replace the matched pattern with an empty string
+    cleaned_text = re.sub(pattern, '', text, flags=re.DOTALL)
+
+    return cleaned_text
 
 
 def textsum(json_file_path):
@@ -201,6 +216,8 @@ def textsum(json_file_path):
 
     for fruit, text in fruit_data.items():
         # Tokenize text into sentences
+
+        text = remove_see_also_section(text)
         sentences = sent_tokenize(text)
         # Preprocess each sentence
         processed_sentences = []
@@ -209,15 +226,11 @@ def textsum(json_file_path):
             words = [stemmer.stem(word.lower()) for word in words if word.isalnum() and word.lower() not in stop_words]
             processed_sentences.append(' '.join(words))
 
-        # Calculate tf-idf
-        vectorizer = TfidfVectorizer()
-        tfidf_matrix = vectorizer.fit_transform(processed_sentences)
-        tfidf_matrix_2 = tfidf_matrix.toarray()
         unique_words_fruit = unique_words(processed_sentences)
         tfidf_matrix = tfidf(processed_sentences, unique_words_fruit).to_numpy()
 
         # Compute similarity matrix (cosine similarity)
-        similarity_matrix = np.matmul(tfidf_matrix_2, tfidf_matrix_2.T)
+        similarity_matrix = cosine_similarity(tfidf_matrix)
         zero_sum_cols = similarity_matrix.sum(axis=0) == 0
 
         # Normalize similarity_matrix
@@ -226,15 +239,14 @@ def textsum(json_file_path):
         similarity_matrix = normalized_data
 
         # Initialize PageRank scores
-
-
         beta = 0.85
         epsilon = 1e-5  # Convergence threshold
         M = similarity_matrix.copy()
         size_of_M = M.shape[0]
-        r = np.full(size_of_M, 1/size_of_M)
+        r = np.full(size_of_M, 1 / size_of_M)
+        r_new = np.zeros_like(r)
         max_iterations = 100  # Maximum number of iterations
-        fixed_vector = np.full(size_of_M, (1-beta)/size_of_M)
+        fixed_vector = np.full(size_of_M, (1 - beta) / size_of_M)
 
         # page rank calculation
         for i in range(max_iterations):
@@ -244,28 +256,7 @@ def textsum(json_file_path):
             else:
                 r = r_new
 
-
-        num_sentences = len(sentences)
-        pr_scores = np.ones(num_sentences) / num_sentences  # Initialize with equal weights
-
-        # PageRank calculation
-        damping_factor = 0.85  # Typical damping factor for PageRank
-        epsilon = 1e-5  # Convergence threshold
-        max_iterations = 100  # Maximum number of iterations
-        for _ in range(max_iterations):
-            prev_pr_scores = np.copy(pr_scores)
-            for i in range(num_sentences):
-                pr_scores[i] = (1 - damping_factor) + damping_factor * np.sum(similarity_matrix[i, :] * prev_pr_scores)
-
-            # Check for convergence
-            if np.linalg.norm(pr_scores - prev_pr_scores) < epsilon:
-                break
-
-        # Sort sentences by PageRank scores
-        ranked_indices1 = np.argsort(-pr_scores)  # Descending order
-        # ranked_indices = np.argsort(-M)  # Descending order
-        # row_sums = np.sum(r_new, axis=1)
-        ranked_indices = np.argsort(r_new)[::-1]
+        ranked_indices = np.argsort(-r_new)
 
         # Extract summary (top 5 sentences)
         summary_sentences = [sentences[idx] for idx in ranked_indices[:5]]
@@ -274,19 +265,28 @@ def textsum(json_file_path):
         # Store the summary for the current fruit
         summaries[fruit] = summary
 
+    return summaries
+
     # Print summaries
-    for fruit, summary in summaries.items():
-        print(f"Summary for {fruit}:")
-        print(summary)
-        print()
+    # for fruit, summary in summaries.items():
+    #     print(f"Summary for {fruit}:")
+    #     print(summary)
+    #     print()
+
 
 def main():
+    # section a - DONE
     # data = pd.read_csv('fruits.csv')
     # fruits_list = data['Fruit'].tolist()
     # fruitcrawl(fruits_list)
-    textsum('fruit_texts.json')
+
+    # section b - DONE
+    summaries = textsum('fruit_texts.json')
+
+    # section c
+
+    pass
 
 
 if __name__ == "__main__":
     main()
-
