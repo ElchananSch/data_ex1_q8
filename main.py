@@ -4,8 +4,94 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.stem import PorterStemmer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 
+################################### TF-IDF ##########################################
+def unique_words(sentences_list):
+
+    # Initialize an empty set to store unique words
+    unique_words = set()
+
+    # Iterate through each inner list and add each word to the set
+    for sentence in sentences_list:
+        words = word_tokenize(sentence)
+        for word in words:
+            unique_words.add(word)
+
+    return list(unique_words)
+
+
+def preprocess_text(text):
+    # Remove non-alphanumeric characters (including punctuation)
+    text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+    # Convert text to lowercase and split into words
+    return text.lower().split()
+
+
+def compute_tf(sentence, word_list):
+    word_count = {}
+    sentence = word_tokenize(sentence)
+    for word in sentence:
+        if word in word_count:
+            word_count[word] += 1
+        else:
+            word_count[word] = 1
+
+    tf = {}
+    for word in word_list:
+        tf[word] = word_count.get(word, 0)
+    return tf
+
+
+def compute_df(sentences, word_list):
+    df = {word: 0 for word in word_list}
+    for sentence in sentences:
+        sentence = word_tokenize(sentence)
+        unique_words = set(sentence)
+        for word in word_list:
+            if word in unique_words:
+                df[word] += 1
+    return df
+
+
+def compute_idf(df, total_documents):
+    idf = {}
+    for word, count in df.items():
+        idf[word] = np.log((1+total_documents) / (1+count)) +1
+    return idf
+
+
+def tfidf(sentences_list, words):
+    # Preprocess descriptions
+    # df['Description'] = df['Description'].apply(preprocess_text)
+    #
+    # # DF
+    # descriptions = df['Description'].tolist()
+    df_word = compute_df(sentences_list, words)
+
+    # IDF
+    total_documents = len(sentences_list)
+    idf_word = compute_idf(df_word, total_documents)
+
+    # TF and TF-ID
+    tfidf_values = []
+    for sentence in sentences_list:
+        tf = compute_tf(sentence, words)
+        tfidf_t = {word: tf[word] * idf_word[word] for word in words}
+        tfidf_values.append(tfidf_t)
+
+    # Create DataFrame
+    tfidf_df = pd.DataFrame(tfidf_values)
+    # tfidf_df.index = df.index
+
+    return tfidf_df
+
+########################### CRAWL WIKIPEDIA ###############################################
 def clean_text(text):
     """Remove reference tags and extra newlines from the text."""
     text = re.sub(r'\[.*?\]+', '', text)  # Remove reference tags
@@ -95,12 +181,110 @@ def fruitcrawl(fruits):
     with open('fruit_texts.json', 'w', encoding='utf-8') as f:
         json.dump(fruit_texts, f, ensure_ascii=False, indent=4)
 
+##################################### SUMMARIZTION WITH PAGE RANK ###########################
 
-# Run the fruitcrawl function
+
+
+def textsum(json_file_path):
+    # Load the JSON file
+
+    nltk.download('punkt')
+    nltk.download('stopwords')
+
+    with open(json_file_path, 'r', encoding='utf-8') as file:
+        fruit_data = json.load(file)
+
+    stop_words = set(stopwords.words('english'))
+    stemmer = PorterStemmer()
+
+    summaries = {}
+
+    for fruit, text in fruit_data.items():
+        # Tokenize text into sentences
+        sentences = sent_tokenize(text)
+        # Preprocess each sentence
+        processed_sentences = []
+        for sentence in sentences:
+            words = word_tokenize(sentence)
+            words = [stemmer.stem(word.lower()) for word in words if word.isalnum() and word.lower() not in stop_words]
+            processed_sentences.append(' '.join(words))
+
+        # Calculate tf-idf
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform(processed_sentences)
+        tfidf_matrix_2 = tfidf_matrix.toarray()
+        unique_words_fruit = unique_words(processed_sentences)
+        tfidf_matrix = tfidf(processed_sentences, unique_words_fruit).to_numpy()
+
+        # Compute similarity matrix (cosine similarity)
+        similarity_matrix = np.matmul(tfidf_matrix_2, tfidf_matrix_2.T)
+        zero_sum_cols = similarity_matrix.sum(axis=0) == 0
+
+        # Normalize similarity_matrix
+        normalized_data = similarity_matrix / similarity_matrix.sum(axis=0, keepdims=True)
+        normalized_data[:, zero_sum_cols] = similarity_matrix[:, zero_sum_cols]  # Avoid division by zero
+        similarity_matrix = normalized_data
+
+        # Initialize PageRank scores
+
+
+        beta = 0.85
+        epsilon = 1e-5  # Convergence threshold
+        M = similarity_matrix.copy()
+        size_of_M = M.shape[0]
+        r = np.full(size_of_M, 1/size_of_M)
+        max_iterations = 100  # Maximum number of iterations
+        fixed_vector = np.full(size_of_M, (1-beta)/size_of_M)
+
+        # page rank calculation
+        for i in range(max_iterations):
+            r_new = beta * M @ r + fixed_vector
+            if np.linalg.norm(r_new - r) < epsilon:
+                break
+            else:
+                r = r_new
+
+
+        num_sentences = len(sentences)
+        pr_scores = np.ones(num_sentences) / num_sentences  # Initialize with equal weights
+
+        # PageRank calculation
+        damping_factor = 0.85  # Typical damping factor for PageRank
+        epsilon = 1e-5  # Convergence threshold
+        max_iterations = 100  # Maximum number of iterations
+        for _ in range(max_iterations):
+            prev_pr_scores = np.copy(pr_scores)
+            for i in range(num_sentences):
+                pr_scores[i] = (1 - damping_factor) + damping_factor * np.sum(similarity_matrix[i, :] * prev_pr_scores)
+
+            # Check for convergence
+            if np.linalg.norm(pr_scores - prev_pr_scores) < epsilon:
+                break
+
+        # Sort sentences by PageRank scores
+        ranked_indices1 = np.argsort(-pr_scores)  # Descending order
+        # ranked_indices = np.argsort(-M)  # Descending order
+        # row_sums = np.sum(r_new, axis=1)
+        ranked_indices = np.argsort(r_new)[::-1]
+
+        # Extract summary (top 5 sentences)
+        summary_sentences = [sentences[idx] for idx in ranked_indices[:5]]
+        summary = ' '.join(summary_sentences)
+
+        # Store the summary for the current fruit
+        summaries[fruit] = summary
+
+    # Print summaries
+    for fruit, summary in summaries.items():
+        print(f"Summary for {fruit}:")
+        print(summary)
+        print()
+
 def main():
-    data = pd.read_csv('fruits.csv')
-    fruits_list = data['Fruit'].tolist()
-    fruitcrawl(fruits_list)
+    # data = pd.read_csv('fruits.csv')
+    # fruits_list = data['Fruit'].tolist()
+    # fruitcrawl(fruits_list)
+    textsum('fruit_texts.json')
 
 
 if __name__ == "__main__":
