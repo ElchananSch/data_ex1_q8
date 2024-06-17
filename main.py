@@ -8,6 +8,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.stem import PorterStemmer
+from sklearn.feature_extraction.text import TfidfVectorizer
 # from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -94,9 +95,13 @@ def tfidf(sentences_list, words):
 
 ########################### CRAWL WIKIPEDIA ###############################################
 def clean_text(text):
-    """Remove reference tags and extra newlines from the text."""
-    text = re.sub(r'\[.*?\]+', '', text)  # Remove reference tags
-    text = text.replace('\n', ' ')  # Replace newlines with spaces
+    """Remove reference tags, specified characters, and extra newlines from the text."""
+    # Remove reference tags in the form [reference]
+    text = re.sub(r'\[.*?\]', '', text)
+    # Remove specified characters: . - ,
+    text = re.sub(r'[.,\-]', '', text)
+    # Replace newlines with spaces
+    text = text.replace('\n', ' ')
     return text
 
 
@@ -276,17 +281,50 @@ def textsum(json_file_path):
 
 def main():
     # section a - DONE
-    # data = pd.read_csv('fruits.csv')
+    data = pd.read_csv('fruits.csv')
     # fruits_list = data['Fruit'].tolist()
     # fruitcrawl(fruits_list)
 
     # section b - DONE
     summaries = textsum('fruit_texts.json')
 
-    # section c
+    # section c - DONE
+
+    summaries_df = pd.DataFrame(list(summaries.items()), columns=['Fruit', 'Summary'])
+
+    summaries_list = list(summaries.values())
+    for i in range(len(summaries_list)):
+        summaries_list[i] = clean_text(summaries_list[i])
+        summaries_list[i] = " ".join(preprocess_text(summaries_list[i]))
+
+    unique_words_fruit = unique_words(summaries_list)
+    tfidf_matrix_mine = tfidf(summaries_list, unique_words_fruit).to_numpy()  # Get feature names (words)
+
+    # Function to get top n TF-IDF words for each fruit
+    def get_top_3_words(tfidf_row):
+        sorted_indices = np.argsort(-tfidf_row)
+        top_3_indices = sorted_indices[:3]
+        top_3_words = [(unique_words_fruit[idx], tfidf_row[idx]) for idx in top_3_indices]
+        return top_3_words
+
+    # Get top 3 words for each fruit
+    top_words = {}
+    for fruit, row in zip(summaries_df['Fruit'], tfidf_matrix_mine):
+        top_words[fruit] = get_top_3_words(row)
+
+    # Create a set of all unique top words
+    unique_top_words = set(word for words in top_words.values() for word, score in words)
+
+    # Initialize new columns with zeros
+    for word in unique_top_words:
+        data[word] = 0.0
+
+    # Populate the new columns with the corresponding TF-IDF values
+    for fruit, words in top_words.items():
+        for word, score in words:
+            data.loc[data['Fruit'] == fruit, word] = score
 
     pass
-
 
 if __name__ == "__main__":
     main()
