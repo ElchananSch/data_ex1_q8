@@ -9,9 +9,12 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.stem import PorterStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics import pairwise_distances
+from collections import defaultdict
 # from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 ################################### TF-IDF ##########################################
 def unique_words(sentences_list):
@@ -279,6 +282,55 @@ def textsum(json_file_path):
     #     print()
 
 
+##################################### KMEAN SECTION #####################################
+def kmeans(dt, k, num_iteration, similarity_func='euclidean', set_seed = None):
+    # Part 1: similarity computation
+    global dt_array
+    if similarity_func == 'euclidean':
+        def assign_k(array1, array_c):
+            return np.argmin(np.linalg.norm(array1 - array_c[:, np.newaxis], axis=2), axis=0).tolist()
+
+        dt_array = dt.values
+    elif similarity_func == 'tfidf':  # Added for question 8E
+        # because of the type of data the tfidf is only log(N/dfi)
+        def idfi(column):
+            return [np.log(len(column) / np.sum(column == i)) for i in column]
+
+        def assign_k(array1, array_c):
+            return np.argmin(pairwise_distances(array1, array_c), axis=1)
+
+        dt_array = dt.apply(idfi).values
+
+    if set_seed is not None:
+        np.random.seed(set_seed)
+    c = dt_array[np.random.choice(dt_array.shape[0], k, replace=False)]
+
+    error = 100000
+    for i in range(num_iteration):
+
+        assign_classes = assign_k(dt_array, c)
+
+        # update the centroid center and compute error
+        error_new = 0
+        for i in range(k):
+            cluster_dt = dt_array[assign_classes == i, :]
+            if len(cluster_dt) == 0:
+                next()
+            else:
+                c[i] = np.mean(cluster_dt, axis=0)
+                if len(cluster_dt) > 0:
+                    error += np.sum((cluster_dt - c[i]) ** 2)
+
+        #         if we got to the minimum error stop iterating
+        if error_new < error:
+            error = error_new
+
+        else:
+            print(f'Finished after {i} iteration')
+            break
+
+    return assign_classes
+
 def main():
     # section a - DONE
     data = pd.read_csv('fruits.csv')
@@ -298,6 +350,12 @@ def main():
         summaries_list[i] = " ".join(preprocess_text(summaries_list[i]))
 
     unique_words_fruit = unique_words(summaries_list)
+
+    words_to_remove = set(stopwords.words('english'))
+    for i in words_to_remove:
+        if i in unique_words_fruit:
+            unique_words_fruit.remove(i)
+
     tfidf_matrix_mine = tfidf(summaries_list, unique_words_fruit).to_numpy()  # Get feature names (words)
 
     # Function to get top n TF-IDF words for each fruit
@@ -326,5 +384,20 @@ def main():
 
     pass
 
+    # section d
+    data_numeric = data[['Price', 'Amount of Sugar', 'Time it Lasts']]
+    numeric_kmeans_labels = kmeans(data_numeric,4,100,similarity_func = 'euclidean', set_seed=42) # set seed for reproducibility
+    #plot the
+    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=numeric_kmeans_labels, palette='Set2')
+    plt.show()
+
+    # section e
+    data_categorical = data[['Color', 'Peeling/Messiness', 'Growth Season']]
+    category_kmeans_labels = kmeans(data_categorical, 4, 1000, similarity_func='tfidf', set_seed=43)
+    plt.figure()
+    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=category_kmeans_labels, palette='Set2')
+    plt.show()
+
 if __name__ == "__main__":
     main()
+print(1)
