@@ -10,11 +10,13 @@ from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.stem import PorterStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics import pairwise_distances
-from collections import defaultdict
-# from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import normalize
+from scipy.spatial.distance import cdist
 import matplotlib.pyplot as plt
 import seaborn as sns
+from gower import gower_matrix
 
 ################################### TF-IDF ##########################################
 def unique_words(sentences_list):
