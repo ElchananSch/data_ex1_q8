@@ -283,54 +283,82 @@ def textsum(json_file_path):
 
 
 ##################################### KMEAN SECTION #####################################
-def kmeans(dt, k, num_iteration, similarity_func='euclidean', set_seed = None):
+def kmeans(dt, k, num_iteration, similarity_func='euclidean', set_seed=None):
     # Part 1: similarity computation
-    global dt_array
-    if similarity_func == 'euclidean':
+
+    if similarity_func == 'euclidean':  # Q8d
         def assign_k(array1, array_c):
             return np.argmin(np.linalg.norm(array1 - array_c[:, np.newaxis], axis=2), axis=0).tolist()
 
         dt_array = dt.values
-    elif similarity_func == 'tfidf':  # Added for question 8E
-        # because of the type of data the tfidf is only log(N/dfi)
-        def idfi(column):
-            return [np.log(len(column) / np.sum(column == i)) for i in column]
 
+    elif similarity_func == 'categorical':  # Q8e
         def assign_k(array1, array_c):
-            return np.argmin(pairwise_distances(array1, array_c), axis=1)
+            return np.argmin(cdist(array1, array_c, metric='hamming'), axis=1)
 
-        dt_array = dt.apply(idfi).values
+        one_hot = OneHotEncoder(sparse=False)
+        dt_array = one_hot.fit_transform(dt)
+
+    elif similarity_func == 'cosine':  # Q8f
+        def assign_k(array1, array_c):
+            return np.argmin(pairwise_distances(array1, array_c, metric='cosine'), axis=1)
+
+        #         dt_array = normalize(dt)
+        dt_array = dt.values
+
+    elif similarity_func == 'combine':  # Q8g
+        def assign_k(array1, array_c):
+            return np.argmin(gower_matrix(array1, array_c), axis=1)
+
+        dt = pd.get_dummies(dt, columns=['Color', 'Peeling/Messiness', 'Growth Season'])
+        dt_array = dt.values
 
     if set_seed is not None:
         np.random.seed(set_seed)
+    # Initialize centroids from the known points
     c = dt_array[np.random.choice(dt_array.shape[0], k, replace=False)]
 
     error = 100000
+    # Part 2: compute the new centroids based on the data
     for i in range(num_iteration):
-
         assign_classes = assign_k(dt_array, c)
-
         # update the centroid center and compute error
         error_new = 0
         for i in range(k):
             cluster_dt = dt_array[assign_classes == i, :]
             if len(cluster_dt) == 0:
-                next()
+                next
             else:
-                c[i] = np.mean(cluster_dt, axis=0)
-                if len(cluster_dt) > 0:
-                    error += np.sum((cluster_dt - c[i]) ** 2)
+                if similarity_func == 'categorical':  # Q8e
+                    c[i] = np.mean(cluster_dt, axis=0)
+                    error_new += np.sum(np.sum(cluster_dt != c[i], axis=1))
+
+                elif similarity_func == 'cosine':  # Q8f
+                    cluster_dt = normalize(
+                        cluster_dt)  # to maintain the direction of the vectors and not the magnitudes
+                    c[i] = np.mean(cluster_dt, axis=0) / np.linalg.norm(np.mean(cluster_dt, axis=0))
+                    error_new += np.sum(pairwise_distances(cluster_dt, c[i].reshape(1, -1), metric='cosine'))
+
+
+                elif similarity_func == 'combine':  # Q8g
+                    c[i] = np.mean(cluster_dt, axis=0)
+                    error_new += np.sum(gower_matrix(cluster_dt, np.expand_dims(c[i], axis=0)))
+
+                else:  # Q8d
+                    c[i] = np.mean(cluster_dt, axis=0)
+                    if len(cluster_dt) > 0:
+                        error_new += np.sum((cluster_dt - c[i]) ** 2)
 
         #         if we got to the minimum error stop iterating
         if error_new < error:
             error = error_new
 
         else:
+            print(assign_classes)
             print(f'Finished after {i} iteration')
             break
 
     return assign_classes
-
 def main():
     # section a - DONE
     data = pd.read_csv('fruits.csv')
@@ -385,18 +413,33 @@ def main():
     pass
 
     # section d
+
     data_numeric = data[['Price', 'Amount of Sugar', 'Time it Lasts']]
-    numeric_kmeans_labels = kmeans(data_numeric,4,100,similarity_func = 'euclidean', set_seed=42) # set seed for reproducibility
+    labels_numeric = kmeans(data_numeric,4,100,similarity_func = 'euclidean', set_seed=42) # set seed for reproducibility
     #plot the
-    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=numeric_kmeans_labels, palette='Set2')
+    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=labels_numeric, palette='Set2')
+    plt.legend(title='Cluster')
     plt.show()
 
     # section e
     data_categorical = data[['Color', 'Peeling/Messiness', 'Growth Season']]
-    category_kmeans_labels = kmeans(data_categorical, 4, 1000, similarity_func='tfidf', set_seed=43)
+    labels_categorical = kmeans(data_categorical, 4, 1000, similarity_func='categorical', set_seed=43)
     plt.figure()
-    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=category_kmeans_labels, palette='Set2')
+    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=labels_categorical, palette='Set2')
+    plt.legend(title='Cluster')
     plt.show()
+
+    # section f
+    data_tfidf = data.iloc[:, 7:]
+    labels_tfidf = kmeans(data_tfidf, 4, 1000, similarity_func='cosine', set_seed=42)
+    plt.figure()
+    sns.scatterplot(data=data_numeric, x='Amount of Sugar', y='Price', hue=labels_tfidf, palette='Set2')
+    plt.legend(title='Cluster')
+    plt.show()
+
+    # section g
+    labels_combine = kmeans(data.iloc[:, 1:], 4, 1000, similarity_func='combine', set_seed=42)
+
 
 if __name__ == "__main__":
     main()
